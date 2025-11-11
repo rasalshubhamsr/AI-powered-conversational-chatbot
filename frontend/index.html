@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chatbot Tester</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background: #f7f7f8; color: #222; }
+    header { background: #0f172a; color: #fff; padding: 16px 24px; }
+    main { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px; }
+    .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .panel h2 { margin-top: 0; font-size: 18px; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+    textarea, input, button { font: inherit; }
+    textarea, input { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+    button { padding: 8px 12px; border: 1px solid #0f172a; background: #0f172a; color: white; border-radius: 6px; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .chat { display: flex; flex-direction: column; gap: 10px; height: calc(100vh - 160px); }
+    .transcript { flex: 1; overflow: auto; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+    .msg { margin-bottom: 10px; }
+    .role { font-weight: 600; margin-right: 6px; }
+    .assistant { background: #eef2ff; padding: 8px; border-radius: 6px; }
+    .user { background: #ecfeff; padding: 8px; border-radius: 6px; }
+    .controls { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .out { white-space: pre-wrap; }
+    footer { padding: 10px 24px; color: #555; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Conversational Chatbot Tester</h1>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Context</h2>
+      <div class="row">
+        <textarea id="context" rows="6" placeholder="Set global context for the assistant..."></textarea>
+      </div>
+      <div class="row">
+        <button id="saveContext">Save Context</button>
+        <button id="loadContext">Load Context</button>
+        <button id="clearTranscript">Clear Transcript</button>
+      </div>
+      <hr />
+      <h2>Utilities</h2>
+      <div class="row">
+        <input id="sentimentInput" placeholder="Text for sentiment analysis" />
+        <button id="runSentiment">Sentiment</button>
+      </div>
+      <div class="row out" id="sentimentOut"></div>
+      <div class="row">
+        <input id="entityInput" placeholder="Text for entity extraction" />
+        <button id="runEntities">Entities</button>
+      </div>
+      <div class="row out" id="entitiesOut"></div>
+    </section>
+
+    <section class="panel chat">
+      <div class="transcript" id="transcript"></div>
+      <div class="controls">
+        <input id="chatInput" placeholder="Type your message..." />
+        <button id="send">Send</button>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <small>Using FastAPI + LangChain + OpenAI. Ensure the server is running on the same origin or adjust CORS if needed.</small>
+  </footer>
+
+  <script>
+    const transcriptEl = document.getElementById('transcript');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('send');
+
+    const contextEl = document.getElementById('context');
+    const saveContextBtn = document.getElementById('saveContext');
+    const loadContextBtn = document.getElementById('loadContext');
+    const clearTranscriptBtn = document.getElementById('clearTranscript');
+
+    const sentimentInput = document.getElementById('sentimentInput');
+    const runSentimentBtn = document.getElementById('runSentiment');
+    const sentimentOut = document.getElementById('sentimentOut');
+
+    const entityInput = document.getElementById('entityInput');
+    const runEntitiesBtn = document.getElementById('runEntities');
+    const entitiesOut = document.getElementById('entitiesOut');
+
+    function appendMessage(role, content) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + (role === 'assistant' ? 'assistant' : 'user');
+      div.innerHTML = `<span class="role">${role}:</span> ${content}`;
+      transcriptEl.appendChild(div);
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    }
+
+    async function postJSON(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    sendBtn.addEventListener('click', async () => {
+      const text = chatInput.value.trim();
+      if (!text) return;
+      chatInput.value = '';
+      appendMessage('user', text);
+      sendBtn.disabled = true;
+      try {
+        const data = await postJSON('/chat', { input: text });
+        appendMessage('assistant', data.response);
+      } catch (e) {
+        appendMessage('assistant', 'Error: ' + e.message);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    });
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendBtn.click();
+      }
+    });
+
+    saveContextBtn.addEventListener('click', async () => {
+      try {
+        await postJSON('/context', { context: contextEl.value || '' });
+        alert('Context updated successfully');
+      } catch (e) {
+        alert('Failed to update context: ' + e.message);
+      }
+    });
+
+    loadContextBtn.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/context');
+        const data = await res.json();
+        contextEl.value = data.context || '';
+      } catch (e) {
+        alert('Failed to load context: ' + e.message);
+      }
+    });
+
+    clearTranscriptBtn.addEventListener('click', () => {
+      transcriptEl.innerHTML = '';
+    });
+
+    runSentimentBtn.addEventListener('click', async () => {
+      const text = sentimentInput.value.trim();
+      if (!text) return;
+      try {
+        const data = await postJSON('/sentiment', { input: text });
+        sentimentOut.textContent = 'Sentiment: ' + data.sentiment;
+      } catch (e) {
+        sentimentOut.textContent = 'Error: ' + e.message;
+      }
+    });
+
+    runEntitiesBtn.addEventListener('click', async () => {
+      const text = entityInput.value.trim();
+      if (!text) return;
+      try {
+        const data = await postJSON('/entities', { input: text });
+        entitiesOut.textContent = 'Entities: ' + (data.entities || []).join(', ');
+      } catch (e) {
+        entitiesOut.textContent = 'Error: ' + e.message;
+      }
+    });
+
+    // Load context on start
+    (async function init() {
+      try {
+        const res = await fetch('/context');
+        const data = await res.json();
+        contextEl.value = data.context || '';
+      } catch {}
+    })();
+  </script>
+</body>
+</html>
